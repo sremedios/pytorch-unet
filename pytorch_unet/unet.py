@@ -3,7 +3,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-from pytorch_engine.layers import create_avg_pool, create_1k_conv
+from pytorch_layers import create_avg_pool, create_k1_conv
 
 from .blocks import InputBlock, ContractingBlock, ExpandingBlock, TransUpBlock
 
@@ -25,7 +25,7 @@ class _UNet(torch.nn.Module):
                  first_channels, max_channels=1024):
         super().__init__()
         self.in_channels = in_channels
-        self.out_classes = out_classes
+        self.out_channels = out_channels
         self.num_trans_down = num_trans_down
         self.max_channels = max_channels
 
@@ -94,7 +94,7 @@ class _UNet(torch.nn.Module):
             output = getattr(self, 'eb%d'%i)(output, shortcut)
 
         # output
-        self.out(output)
+        output = self.out(output)
 
         return output
 
@@ -116,4 +116,4 @@ class UNet(_UNet):
         return ExpandingBlock(in_channels, shortcut_channels, out_channels)
 
     def _create_out(self, in_channels):
-        return create_1k_conv(in_channels, self.out_classes)
+        return create_k1_conv(in_channels, self.out_channels)
