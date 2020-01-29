@@ -3,6 +3,8 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
+import warnings
+from collections import Iterable
 from pytorch_layers import create_avg_pool, create_k1_conv
 
 from .blocks import InputBlock, ContractingBlock, ExpandingBlock, TransUpBlock
@@ -28,6 +30,7 @@ class _UNet(torch.nn.Module):
         self.out_channels = out_channels
         self.num_trans_down = num_trans_down
         self.max_channels = max_channels
+        self._output_levels = [0]
 
         # encoding/contracting
         inter_channels = (in_channels + first_channels) // 2
@@ -42,9 +45,8 @@ class _UNet(torch.nn.Module):
             in_channels = out_channels
 
         # decoding/expanding
-        for i in range(self.num_trans_down):
-            shortcut_ind = self.num_trans_down - i - 1
-            out_channels = getattr(self, 'cb%d'%shortcut_ind).out_channels
+        for i in reversed(range(self.num_trans_down)):
+            out_channels = getattr(self, 'cb%d'%i).out_channels
             setattr(self, 'tu%d'%i, self._create_tu(in_channels, out_channels))
             eb = self._create_eb(out_channels, out_channels, out_channels)
             setattr(self, 'eb%d'%i, eb)
@@ -52,6 +54,20 @@ class _UNet(torch.nn.Module):
 
         # output
         self.out = self._create_out(out_channels)
+
+    @property
+    def output_levels(self):
+        return self._output_levels
+
+    @output_levels.setter
+    def output_levels(self, levels):
+        levels = levels if isinstance(levels, Iterable) else [levels]
+        levels = np.sort(levels)
+        if levels[-1] > self.num_trans_down:
+            message = ('Output levels should be less or equal to the number '
+                       'of transition down.')
+            warnings.warn(message, RuntimeWarning, stacklevel=3)
+        self._output_levels = levels[levels<=self.num_trans_down].tolist()
 
     def _calc_out_channels(self, in_channels):
         """Calculate the number of output chennals of a block."""
@@ -82,14 +98,17 @@ class _UNet(torch.nn.Module):
         # encoding/contracting
         output = input
         shortcuts = list()
-        for i in range(self.num_trans_down+1):
+        for i in range(self.num_trans_down):
             output = getattr(self, 'cb%d'%i)(output)
-            if i < self.num_trans_down:
-                shortcuts.insert(0, output)
-                output = getattr(self, 'td%d'%(i))(output)
+            shortcuts.append(output)
+            output = getattr(self, 'td%d'%i)(output)
+
+        # bridge
+        output = getattr(self, 'cb%d'%self.num_trans_down)(output)
 
         # decoding/expanding
-        for i, shortcut in enumerate(shortcuts):
+        for i in reversed(range(self.num_trans_down)):
+            shortcut = shortcuts[i]
             output = getattr(self, 'tu%d'%i)(output)
             output = getattr(self, 'eb%d'%i)(output, shortcut)
 

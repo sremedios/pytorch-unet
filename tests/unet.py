@@ -10,8 +10,10 @@ from torchviz import make_dot
 Config.dim = Dim.THREE
 Config.show()
 
-unet = UNet(1, 4, 3, 8)
-print(unet)
+unet = UNet(1, 4, 2, 8)
+unet.output_levels = [0, 1, 3]
+print(unet._output_levels)
+# print(unet)
 
 x = torch.rand(1, 1, 16, 16, 16)
 y = unet(x)
