@@ -24,13 +24,13 @@ class _UNet(torch.nn.Module):
 
     """
     def __init__(self, in_channels, out_channels, num_trans_down,
-                 first_channels, max_channels=1024):
+                 first_channels, max_channels=1024, output_levels=0):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.num_trans_down = num_trans_down
         self.max_channels = max_channels
-        self._output_levels = [0]
+        self.output_levels = self._init_output_levels(output_levels)
 
         # encoding/contracting
         inter_channels = (in_channels + first_channels) // 2
@@ -39,35 +39,36 @@ class _UNet(torch.nn.Module):
         for i in range(self.num_trans_down):
             out_channels = self._calc_out_channels(in_channels)
             inter_channels = (in_channels + out_channels) // 2
-            setattr(self, 'td%d'%(i), create_avg_pool(2))
+            td = create_avg_pool(2)
+            setattr(self, 'td%d'%(i), td)
             cb = self._create_cb(in_channels, out_channels, inter_channels)
             setattr(self, 'cb%d'%(i+1), cb)
             in_channels = out_channels
 
-        # decoding/expanding
-        for i in reversed(range(self.num_trans_down)):
+        if self.num_trans_down in self.output_levels:
+            out = self._create_out(out_channels)
+            setattr(self, 'out%d'%self.num_trans_down, out)
+
+        # decoding/expanding and output
+        for i in reversed(range(self.output_levels[0], self.num_trans_down)):
             out_channels = getattr(self, 'cb%d'%i).out_channels
-            setattr(self, 'tu%d'%i, self._create_tu(in_channels, out_channels))
+            tu = self._create_tu(in_channels, out_channels)
+            setattr(self, 'tu%d'%i, tu)
             eb = self._create_eb(out_channels, out_channels, out_channels)
             setattr(self, 'eb%d'%i, eb)
+            if i in self.output_levels:
+                out = self._create_out(out_channels)
+                setattr(self, 'out%d'%i, out)
             in_channels = out_channels
 
-        # output
-        self.out = self._create_out(out_channels)
-
-    @property
-    def output_levels(self):
-        return self._output_levels
-
-    @output_levels.setter
-    def output_levels(self, levels):
+    def _init_output_levels(self, levels):
         levels = levels if isinstance(levels, Iterable) else [levels]
         levels = np.sort(levels)
         if levels[-1] > self.num_trans_down:
             message = ('Output levels should be less or equal to the number '
                        'of transition down.')
             warnings.warn(message, RuntimeWarning, stacklevel=3)
-        self._output_levels = levels[levels<=self.num_trans_down].tolist()
+        return levels[levels<=self.num_trans_down].tolist()
 
     def _calc_out_channels(self, in_channels):
         """Calculate the number of output chennals of a block."""
@@ -95,6 +96,8 @@ class _UNet(torch.nn.Module):
         raise NotImplementedError
 
     def forward(self, input):
+        outputs = dict()
+
         # encoding/contracting
         output = input
         shortcuts = list()
@@ -104,18 +107,22 @@ class _UNet(torch.nn.Module):
             output = getattr(self, 'td%d'%i)(output)
 
         # bridge
-        output = getattr(self, 'cb%d'%self.num_trans_down)(output)
+        i = self.num_trans_down
+        output = getattr(self, 'cb%d'%i)(output)
+        if i in self.output_levels:
+            outputs[i] = getattr(self, 'out%d' % i)(output)
 
         # decoding/expanding
-        for i in reversed(range(self.num_trans_down)):
-            shortcut = shortcuts[i]
+        for i in reversed(range(self.output_levels[0], self.num_trans_down)):
             output = getattr(self, 'tu%d'%i)(output)
-            output = getattr(self, 'eb%d'%i)(output, shortcut)
+            output = getattr(self, 'eb%d'%i)(output, shortcuts[i])
+            if i in self.output_levels:
+                outputs[i] = getattr(self, 'out%d' % i)(output)
 
-        # output
-        output = self.out(output)
+        if len(outputs) == 1:
+            outputs = outputs[list(outputs.keys())[0]]
 
-        return output
+        return outputs
 
 
 class UNet(_UNet):
