@@ -7,13 +7,15 @@ from pytorch_layers import Config
 from torchviz import make_dot
 
 
-Config.dim = 3
+Config.dim = 2
+Config.padding_mode = 'reflect'
 Config.show()
 
 unet = UNet(1, 4, 3, 8, output_levels=[3, 0, 1])
 print(unet)
 
-x = torch.rand(1, 1, 16, 16, 16)
+# x = torch.rand(1, 1, 16, 16, 16)
+x = torch.rand(1, 1, 16, 16)
 y = unet(x)
 if isinstance(y, dict):
     for k, v in y.items():
