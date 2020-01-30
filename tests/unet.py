@@ -3,11 +3,11 @@
   
 import torch
 from pytorch_unet import UNet
-from pytorch_layers import Config, Dim
+from pytorch_layers import Config
 from torchviz import make_dot
 
 
-Config.dim = Dim.THREE
+Config.dim = 3
 Config.show()
 
 unet = UNet(1, 4, 3, 8, output_levels=[3, 0, 1])
