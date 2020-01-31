@@ -35,7 +35,8 @@ class _UNet(torch.nn.Module):
         # encoding/contracting
         inter_channels = (in_channels + first_channels) // 2
         self.cb0 = self._create_ib(in_channels, first_channels, inter_channels)
-        in_channels = first_channels
+        out_channels = first_channels
+        in_channels = out_channels
         for i in range(self.num_trans_down):
             out_channels = self._calc_out_channels(in_channels)
             inter_channels = (in_channels + out_channels) // 2
@@ -63,7 +64,7 @@ class _UNet(torch.nn.Module):
 
     def _init_output_levels(self, levels):
         levels = levels if isinstance(levels, Iterable) else [levels]
-        levels = np.sort(levels)
+        levels = np.unique(levels)
         if levels[-1] > self.num_trans_down:
             message = ('Output levels should be less or equal to the number '
                        'of transition down.')
