@@ -1,13 +1,9 @@
-# -*- coding: utf-8 -*-
-  
 import numpy as np
 import torch
 import torch.nn.functional as F
-import warnings
 from collections import Iterable
-from pytorch_layers import create_avg_pool, create_k1_conv
 
-from .blocks import InputBlock, ContractingBlock, ExpandingBlock, TransUpBlock
+from .blocks import ContractingBlock, ExpandingBlock, TransUpBlock, Resize3d
 
 
 class _UNet(torch.nn.Module):
@@ -21,6 +17,8 @@ class _UNet(torch.nn.Module):
         first_channels (int): The number of output channels of the input block.
             This number controls the "width" of the networ.
         max_channels (int): The maximum number of tensor channels.
+        output_levels (int or list[int]): The indices of the levels that
+            give outputs. The top level is 0.
 
     """
     def __init__(self, in_channels, out_channels, num_trans_down,
@@ -33,22 +31,22 @@ class _UNet(torch.nn.Module):
         self.output_levels = self._init_output_levels(output_levels)
 
         # encoding/contracting
-        inter_channels = (in_channels + first_channels) // 2
-        self.cb0 = self._create_ib(in_channels, first_channels, inter_channels)
+        mid_channels = (in_channels + first_channels) // 2
+        self.cb0 = self._create_ib(in_channels, first_channels, mid_channels)
         out_channels = first_channels
         in_channels = out_channels
         for i in range(self.num_trans_down):
             out_channels = self._calc_out_channels(in_channels)
-            inter_channels = (in_channels + out_channels) // 2
-            td = create_avg_pool(2)
+            mid_channels = (in_channels + out_channels) // 2
+            td = self._create_td()
             setattr(self, 'td%d'%(i), td)
-            cb = self._create_cb(in_channels, out_channels, inter_channels)
+            cb = self._create_cb(in_channels, out_channels, mid_channels)
             setattr(self, 'cb%d'%(i+1), cb)
             in_channels = out_channels
 
         if self.num_trans_down in self.output_levels:
             out = self._create_out(out_channels)
-            setattr(self, 'out%d'%self.num_trans_down, out)
+            setattr(self, 'out%d' % self.num_trans_down, out)
 
         # decoding/expanding and output
         for i in reversed(range(self.output_levels[0], self.num_trans_down)):
@@ -76,16 +74,20 @@ class _UNet(torch.nn.Module):
         out_channels = min(in_channels * 2, self.max_channels)
         return out_channels
 
-    def _create_ib(self, in_channels, out_channels, inter_channels):
+    def _create_ib(self, in_channels, out_channels, mid_channels):
         """Returns an input block"""
         raise NotImplementedError
 
-    def _create_cb(self, in_channels, out_channels, inter_channels):
+    def _create_cb(self, in_channels, out_channels, mid_channels):
         """Returns a contracting block"""
         raise NotImplementedError
 
+    def _create_td(self):
+        """Returns a transition down block"""
+        raise NotImplementedError
+
     def _create_tu(self, in_channels, out_channels):
-        """Returns a trans up block"""
+        """Returns a transition up block"""
         raise NotImplementedError
 
     def _create_eb(self, in_channels, shortcut_channels, out_channels):
@@ -130,11 +132,14 @@ class UNet(_UNet):
     """The UNet.
 
     """
-    def _create_ib(self, in_channels, out_channels, inter_channels):
-        return InputBlock(in_channels, out_channels, inter_channels)
+    def _create_ib(self, in_channels, out_channels, mid_channels):
+        return ContractingBlock(in_channels, out_channels, mid_channels)
 
-    def _create_cb(self, in_channels, out_channels, inter_channels):
-        return ContractingBlock(in_channels, out_channels, inter_channels)
+    def _create_cb(self, in_channels, out_channels, mid_channels):
+        return ContractingBlock(in_channels, out_channels, mid_channels)
+
+    def _create_td(self):
+        return Resize3d(scale_factor=0.5)
 
     def _create_tu(self, in_channels, out_channels):
         return TransUpBlock(in_channels, out_channels)
@@ -143,4 +148,4 @@ class UNet(_UNet):
         return ExpandingBlock(in_channels, shortcut_channels, out_channels)
 
     def _create_out(self, in_channels):
-        return create_k1_conv(in_channels, self.out_channels)
+        return torch.nn.Conv3d(in_channels, self.out_channels, 1, bias=False)
