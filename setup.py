@@ -16,7 +16,8 @@ setup(
     python_requires='>=3.7.10',
     long_description=long_desc,
     install_requires=[
-        'torch>=1.8.1'
+        'torch>=1.8.1',
+        'radifox-utils'
     ],
     long_description_content_type='text/markdown',
     url='https://github.com/shuohan/pytorch-unet.git',
