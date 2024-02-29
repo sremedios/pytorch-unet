@@ -1,6 +1,6 @@
 import torch
 
-from resize.pytorch import resize
+from radifox.utils.resize.pytorch import resize
 
 
 class _ConvBlock(torch.nn.Sequential):
