@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 import torch.nn.functional as F
-from collections import Iterable
+from collections.abc import Iterable
 
 from .blocks import ContractingBlock, ExpandingBlock, TransUpBlock, Resize3d
 
